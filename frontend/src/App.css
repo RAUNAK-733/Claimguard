@@ -49,9 +49,7 @@ button {
 }
 
 .topbar {
-  display: grid;
-  grid-template-columns: 190px 1fr auto;
-  gap: 16px;
+  display: flex;
   align-items: center;
   min-height: 58px;
   padding: 0 22px;
@@ -223,6 +221,108 @@ button {
   gap: 18px;
 }
 
+.workflow-stack {
+  display: grid;
+  gap: 16px;
+  background: #f8fafb;
+}
+
+.workflow-section {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.step-number {
+  display: inline-flex;
+  flex: 0 0 27px;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section-heading h3 {
+  margin: 0;
+  color: #334955;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.section-heading strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.section-heading p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.care-category-section {
+  border-color: #b9cedb;
+  background: #f4f9fc;
+}
+
+.care-category-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.care-category-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 10px 16px;
+  border: 1px solid #bfcbd3;
+  border-radius: 6px;
+  color: #51616c;
+  background: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.care-category-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.care-category-option.selected {
+  border-color: var(--primary);
+  color: #ffffff;
+  background: var(--primary);
+  box-shadow: 0 2px 6px rgba(26, 82, 118, 0.18);
+}
+
+.diagnosis-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(320px, 1.15fr);
+  gap: 14px;
+  align-items: end;
+}
+
 .section-block {
   display: grid;
   gap: 12px;
@@ -385,11 +485,16 @@ button {
   gap: 12px;
 }
 
+.recommendation-section {
+  border-color: #c8d9e3;
+  background: #fbfdfe;
+}
+
 .recommendation-block {
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: #fafbfc;
+  background: #ffffff;
 }
 
 .recommendation-block span {
@@ -427,6 +532,10 @@ button {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.group-details summary::marker {
+  color: var(--primary);
 }
 
 .group-details .checkbox-grid {
@@ -481,6 +590,19 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.demo-block {
+  background: #fbfcfd;
+}
+
+.demo-actions .secondary-button {
+  flex: 1 1 180px;
+}
+
+.submit-section {
+  border-color: #b9cedb;
+  background: #f4f9fc;
 }
 
 .primary-button,
@@ -652,6 +774,32 @@ button {
 
 .decision-banner.reject {
   background: var(--reject);
+}
+
+.treatment-note {
+  padding: 9px 12px;
+  border: 1px solid #efb8b2;
+  border-radius: 5px;
+  color: #7f3029;
+  background: #fff4f3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.result-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.result-panel-title h2 {
+  margin: 0;
+}
+
+.result-panel-title p {
+  margin: 3px 0 0;
+  color: var(--text-soft);
+  font-size: 11px;
 }
 
 .result-grid {
@@ -853,17 +1001,12 @@ th {
 
 @media (max-width: 1180px) {
   .topbar {
-    grid-template-columns: auto 1fr;
     padding: 10px 16px;
-  }
-
-  .meta-block {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
   }
 
   .field-grid,
   .field-grid.two-column,
+  .diagnosis-layout,
   .recommendation-panel,
   .result-grid,
   .checks-grid {
@@ -909,6 +1052,7 @@ th {
 
   .field-grid,
   .field-grid.two-column,
+  .diagnosis-layout,
   .recommendation-panel,
   .result-grid,
   .detail-grid,
@@ -919,12 +1063,7 @@ th {
 
 @media (max-width: 620px) {
   .topbar {
-    grid-template-columns: 1fr;
     gap: 6px;
-  }
-
-  .title-block {
-    text-align: left;
   }
 
   .main-area {
@@ -934,6 +1073,14 @@ th {
   .checkbox-grid,
   .group-details .checkbox-grid {
     grid-template-columns: 1fr;
+  }
+
+  .care-category-toggle {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-section {
+    padding: 14px;
   }
 
   .backend-banner,

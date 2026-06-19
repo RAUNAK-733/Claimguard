@@ -349,6 +349,10 @@ const DIAGNOSES = [
   },
 ];
 
+const BASIC_COMMON_DIAGNOSIS_CODES = ["I10", "R50.9", "A09", "D50.9", "B20"];
+const BASIC_MALE_DIAGNOSIS_CODES = ["N40", "N50.9", "N47"];
+const BASIC_FEMALE_DIAGNOSIS_CODES = ["Z34", "O80", "O82"];
+
 const GROUPS = {
   emergencyServices: [
     {
@@ -385,21 +389,21 @@ const GROUPS = {
         { code: "morphine", label: "morphine" },
       ],
     },
-    {
-      title: "High-cost / Invalid Demo",
-      items: [
-        { code: "surgery", label: "surgery" },
-        { code: "icu_stay", label: "icu_stay" },
-        { code: "mri", label: "mri" },
-        { code: "normal_delivery", label: "normal_delivery" },
-        { code: "antenatal_care", label: "antenatal_care" },
-        { code: "cosmetic_surgery", label: "cosmetic_surgery" },
-        { code: "tourniquet", label: "tourniquet" },
-        { code: "cut_wound", label: "cut_wound" },
-        { code: "suction_bite", label: "suction_bite" },
-        { code: "home_remedy", label: "home_remedy" },
-      ],
-    },
+    // {
+    //   title: "High-cost / Invalid Demo",
+    //   items: [
+    //     { code: "surgery", label: "surgery" },
+    //     { code: "icu_stay", label: "icu_stay" },
+    //     { code: "mri", label: "mri" },
+    //     { code: "normal_delivery", label: "normal_delivery" },
+    //     { code: "antenatal_care", label: "antenatal_care" },
+    //     { code: "cosmetic_surgery", label: "cosmetic_surgery" },
+    //     { code: "tourniquet", label: "tourniquet" },
+    //     { code: "cut_wound", label: "cut_wound" },
+    //     { code: "suction_bite", label: "suction_bite" },
+    //     { code: "home_remedy", label: "home_remedy" },
+    //   ],
+    // },
   ],
   basicCare: [
     {
@@ -668,15 +672,18 @@ function findDiagnosisByIcd(icdCode) {
 }
 
 function getDiagnosesForCategory(careCategory, gender) {
-  return DIAGNOSES.filter((item) => {
-    if (item.careCategory !== careCategory) {
-      return false;
-    }
-    if (careCategory === "basic" && item.genderScope !== "all" && item.genderScope !== gender) {
-      return false;
-    }
-    return true;
-  });
+  if (careCategory === "emergency") {
+    return DIAGNOSES.filter((item) => item.careCategory === "emergency");
+  }
+
+  const allowedDiagnosisCodes = new Set([
+    ...BASIC_COMMON_DIAGNOSIS_CODES,
+    ...(gender === "female" ? BASIC_FEMALE_DIAGNOSIS_CODES : BASIC_MALE_DIAGNOSIS_CODES),
+  ]);
+
+  return DIAGNOSES.filter(
+    (item) => item.careCategory === "basic" && allowedDiagnosisCodes.has(item.icd),
+  );
 }
 
 function buildEmptyClinicalFlags(diagnosis) {
@@ -842,6 +849,19 @@ function Field({ label, children }) {
   );
 }
 
+function SectionHeading({ number, title, helper, subtitle }) {
+  return (
+    <div className="section-heading">
+      <span className="step-number">{number}</span>
+      <div>
+        <h3>{title}</h3>
+        {subtitle ? <strong>{subtitle}</strong> : null}
+        {helper ? <p>{helper}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function CheckboxGrid({ items, selected, onToggle }) {
   return (
     <div className="checkbox-grid">
@@ -862,15 +882,6 @@ function CheckboxGrid({ items, selected, onToggle }) {
   );
 }
 
-function SummaryCard({ label, value }) {
-  return (
-    <div className="summary-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
 function ResultMetric({ label, value, tone }) {
   return (
     <div className="result-metric">
@@ -880,17 +891,15 @@ function ResultMetric({ label, value, tone }) {
   );
 }
 
-function ValidationCard({ label, result, emptyText }) {
+function ValidationCard({ result, emptyText }) {
   if (!result) {
     return (
       <div className="result-panel-content">
-        <div className="validation-label">{label}</div>
         <p className="empty-state small">{emptyText}</p>
       </div>
     );
   }
 
-  const checks = result.openimis_checks || {};
   const decisionTone = getDecisionTone(result.rule_decision);
   const riskTone = getRiskTone(result.risk_level);
   const complianceScore = Number(result.compliance_score || 0);
@@ -898,18 +907,20 @@ function ValidationCard({ label, result, emptyText }) {
 
   return (
     <div className="result-panel-content">
-      <div className="validation-header">
-        <div className="validation-label">{label}</div>
-      </div>
-
       <div className={`decision-banner ${decisionTone}`}>
         <strong>
           {result.rule_decision === "REJECT_ENTRY"
-            ? "CLAIM REJECTED - Entry Blocked"
+            ? "CLAIM REJECTED — Entry Blocked"
             : prettyLabel(result.rule_decision)}
         </strong>
         <span>{result.suggested_action}</span>
       </div>
+
+      {result.rule_decision === "REJECT_ENTRY" ? (
+        <div className="treatment-note">
+          This blocks incorrect claim submission, not patient treatment.
+        </div>
+      ) : null}
 
       <div className="result-grid">
         <ResultMetric label="Rule Decision" tone={decisionTone} value={prettyLabel(result.rule_decision)} />
@@ -922,7 +933,7 @@ function ValidationCard({ label, result, emptyText }) {
         <ResultMetric label="STP Pathway" value={pathway} />
       </div>
 
-      <div className="compliance-card">
+      {/* <div className="compliance-card">
         <div className="compliance-header">
           <strong>Compliance Score: {result.compliance_score}%</strong>
           <span>STP Pathway: {pathway}</span>
@@ -933,7 +944,7 @@ function ValidationCard({ label, result, emptyText }) {
             style={{ width: `${Math.max(0, Math.min(complianceScore, 100))}%` }}
           />
         </div>
-      </div>
+      </div> */}
 
       <div className="detail-grid">
         <div className="detail-card">
@@ -951,18 +962,6 @@ function ValidationCard({ label, result, emptyText }) {
               ? result.rule_hits.map((hit) => <span key={hit}>{hit}</span>)
               : <span>No rule hits returned.</span>}
           </div>
-        </div>
-      </div>
-
-      <div className="checks-card">
-        <h3>openIMIS Checks</h3>
-        <div className="checks-grid">
-          <span>Gender Mismatch: <strong>{checks.gender_mismatch ? "Flagged" : "Clear"}</strong></span>
-          <span>Age Mismatch: <strong>{checks.age_mismatch ? "Flagged" : "Clear"}</strong></span>
-          <span>Care Type Mismatch: <strong>{checks.care_type_mismatch ? "Flagged" : "Clear"}</strong></span>
-          <span>Max Amount Violation: <strong>{checks.max_amount_violation ? "Flagged" : "Clear"}</strong></span>
-          <span>High Cost Count: <strong>{checks.high_cost_count ?? 0}</strong></span>
-          <span>Unknown Item Count: <strong>{checks.unknown_item_count ?? 0}</strong></span>
         </div>
       </div>
     </div>
@@ -1036,19 +1035,24 @@ function App() {
 
   function updatePatient(field, value) {
     setForm((current) => {
-      const filteredServices = filterBasicCodesByGender(current.services, value);
-      const filteredMedicines = filterBasicCodesByGender(current.medicines, value);
+      const isBasicGenderChange = field === "gender" && current.careCategory === "basic";
+      const filteredServices = isBasicGenderChange
+        ? filterBasicCodesByGender(current.services, value)
+        : current.services;
+      const filteredMedicines = isBasicGenderChange
+        ? filterBasicCodesByGender(current.medicines, value)
+        : current.medicines;
       const nextForm = {
         ...current,
         patient: {
           ...current.patient,
           [field]: value,
         },
-        services: current.careCategory === "basic" ? filteredServices : current.services,
-        medicines: current.careCategory === "basic" ? filteredMedicines : current.medicines,
+        services: filteredServices,
+        medicines: filteredMedicines,
       };
 
-      if (field === "gender" && current.careCategory === "basic") {
+      if (isBasicGenderChange) {
         const currentDiagnosis = findDiagnosisByIcd(current.icdCode);
         if (
           currentDiagnosis &&
@@ -1059,7 +1063,7 @@ function App() {
           nextForm.condition_code = "";
           nextForm.clinical_conditions = {};
           setDiagnosisResetNote(
-            "Diagnosis reset - not applicable for selected gender.",
+            "Diagnosis reset — not applicable for selected gender.",
           );
         } else {
           setDiagnosisResetNote("");
@@ -1160,13 +1164,6 @@ function App() {
     setDiagnosisResetNote("");
     resetResults();
     setActivePage(PAGE_KEYS.claimEntry);
-  }
-
-  function resetForm() {
-    setValidationId("VAL-001");
-    setForm(buildDefaultForm());
-    setDiagnosisResetNote("");
-    resetResults();
   }
 
   function buildPayload(validationMode) {
@@ -1279,24 +1276,15 @@ function App() {
   function renderHomePage() {
     return (
       <section className="content-stack">
-        <div className="page-heading">
-          <h1>ClaimGuard Emergency Validator</h1>
-          <p>Pre-adjudication validation layer for openIMIS-style emergency and basic care claims.</p>
-        </div>
         <section className="panel">
           <div className="panel-header">
-            <h2>Welcome</h2>
+            <h2>Welcome to ClaimGuard</h2>
           </div>
           <div className="panel-body">
             <p className="body-copy">
-              ClaimGuard checks claim pathways against Nepal STP 2078 guidance before reimbursement.
-              Use the claim entry module for emergency and basic care validation in one place.
+              ClaimGuard validates openIMIS-style claims against Nepal STP 2078 pathways before reimbursement.
+              Use the claim entry module to check emergency and basic care claims in one place.
             </p>
-            <div className="summary-grid">
-              <SummaryCard label="Supported diagnoses" value={health.supportedCount || 14} />
-              <SummaryCard label="STP engine" value="Active" />
-              <SummaryCard label="Conflict model" value={health.modelLoaded ? "Loaded" : "Offline"} />
-            </div>
             <div className="inline-actions">
               <button className="primary-button" onClick={() => setActivePage(PAGE_KEYS.claimEntry)} type="button">
                 Go to Claim Entry
@@ -1311,8 +1299,12 @@ function App() {
   function renderRecommendedPanel() {
     if (!selectedDiagnosis) {
       return (
-        <section className="section-block">
-          <h3>Recommended STP Services / Items</h3>
+        <section className="workflow-section recommendation-section">
+          <SectionHeading
+            number="4"
+            title="STP Recommendation"
+            subtitle="Recommended STP Services / Items"
+          />
           <p className="helper-copy">Select a diagnosis to load the recommended STP guidance.</p>
         </section>
       );
@@ -1320,8 +1312,12 @@ function App() {
 
     const recommended = selectedDiagnosis.recommended;
     return (
-      <section className="section-block">
-        <h3>Recommended STP Services / Items</h3>
+      <section className="workflow-section recommendation-section">
+        <SectionHeading
+          number="4"
+          title="STP Recommendation"
+          subtitle="Recommended STP Services / Items"
+        />
         <div className="recommendation-panel">
           <div className="recommendation-block">
             <span>Expected</span>
@@ -1357,27 +1353,51 @@ function App() {
       resultMode === "submitted_validation"
         ? submittedResult || livePreviewResult
         : livePreviewResult || submittedResult;
-    const visibleResultLabel =
-      resultMode === "submitted_validation"
-        ? "Submitted Validation"
-        : "Live Preview";
 
     return (
       <section className="content-stack">
         <div className="page-heading">
-          <h1>Emergency Claim Entry - ClaimGuard Pre-Adjudication Module</h1>
-          <p>Validates claims against Nepal STP 2078 clinical pathways before reimbursement</p>
+          <h1>Emergency Claim Entry — ClaimGuard Compliance Module</h1>
+          <p>Follow the guided workflow to validate a claim against the selected Nepal STP 2078 pathway.</p>
         </div>
 
         <form className="panel" onSubmit={submitClaim}>
           <div className="panel-header">
-            <h2>Claim Information</h2>
-            <span className="header-tag">{form.icdCode || "Diagnosis required"}</span>
+            <h2>Guided Claim Entry</h2>
+            <span className="header-tag">ICD → STP → Evidence → Claim → Result</span>
           </div>
 
-          <div className="panel-body section-stack">
-            <section className="section-block">
-              <h3>Insuree and Health Facility</h3>
+          <div className="panel-body workflow-stack">
+            <section className="workflow-section care-category-section">
+              <SectionHeading
+                number="1"
+                title="Care Category"
+                helper="Choose the care stream first. It controls the available diagnoses and claim items."
+              />
+              <div className="care-category-toggle" role="group" aria-label="Care Category">
+                {CARE_CATEGORY_OPTIONS.map((item) => (
+                  <label
+                    className={`care-category-option ${form.careCategory === item.key ? "selected" : ""}`}
+                    key={item.key}
+                  >
+                    <input
+                      checked={form.careCategory === item.key}
+                      name="care-category"
+                      onChange={() => changeCareCategory(item.key)}
+                      type="radio"
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="workflow-section">
+              <SectionHeading
+                number="2"
+                title="Insuree Details"
+                helper="Confirm the patient and facility details used for pathway validation."
+              />
               <div className="field-grid">
                 <Field label="Validation ID">
                   <input onChange={(event) => setValidationId(event.target.value)} value={validationId} />
@@ -1406,25 +1426,13 @@ function App() {
               </div>
             </section>
 
-            <section className="section-block">
-              <h3>Diagnosis</h3>
-              <div className="field-grid two-column">
-                <div className="radio-block">
-                  <span className="field-label">Care Category</span>
-                  <div className="radio-row">
-                    {CARE_CATEGORY_OPTIONS.map((item) => (
-                      <label className="radio-item" key={item.key}>
-                        <input
-                          checked={form.careCategory === item.key}
-                          name="care-category"
-                          onChange={() => changeCareCategory(item.key)}
-                          type="radio"
-                        />
-                        <span>{item.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+            <section className="workflow-section">
+              <SectionHeading
+                number="3"
+                title="ICD / Diagnosis"
+                helper="Select the diagnosis that determines the applicable STP pathway."
+              />
+              <div className="diagnosis-layout">
                 <Field label="ICD-10 / Diagnosis">
                   <select onChange={(event) => changeDiagnosis(event.target.value)} value={form.icdCode}>
                     {availableDiagnoses.length === 0 ? (
@@ -1441,19 +1449,22 @@ function App() {
                     )}
                   </select>
                 </Field>
+                <div className="pathway-card full-width">
+                  <span>Selected STP Pathway</span>
+                  <strong>{selectedDiagnosis ? selectedDiagnosis.pathway : "Select a diagnosis to load the pathway."}</strong>
+                </div>
               </div>
               {diagnosisResetNote ? <div className="inline-note">{diagnosisResetNote}</div> : null}
-              <div className="pathway-card full-width">
-                <span>Selected STP Pathway</span>
-                <strong>{selectedDiagnosis ? selectedDiagnosis.pathway : "Select a diagnosis to load the pathway."}</strong>
-              </div>
             </section>
 
-            <section className="section-block">
-              <h3>Clinical Findings / STP Evidence</h3>
-              <p className="helper-copy">
-                Select recorded clinical findings that justify the claimed services and medicines.
-              </p>
+            {renderRecommendedPanel()}
+
+            <section className="workflow-section">
+              <SectionHeading
+                number="5"
+                title="Clinical Findings / STP Evidence"
+                helper="Select recorded clinical findings that justify the claimed services and medicines."
+              />
               {selectedDiagnosis ? (
                 <CheckboxGrid
                   items={selectedDiagnosis.evidenceFlags}
@@ -1465,13 +1476,15 @@ function App() {
               )}
             </section>
 
-            {renderRecommendedPanel()}
-
-            <section className="section-block">
-              <h3>Services and Medicines</h3>
+            <section className="workflow-section">
+              <SectionHeading
+                number="6"
+                title="Claimed Services / Medicines"
+                helper="Choose only the services, investigations, medicines, or procedures recorded for this claim."
+              />
               <div className="group-stack">
                 {(form.careCategory === "emergency" ? GROUPS.emergencyServices : GROUPS.basicCare).map((group) => (
-                  <details className="group-details" key={group.title} open>
+                  <details className="group-details" key={`${form.careCategory}-${group.title}`}>
                     <summary>{group.title}</summary>
                     <CheckboxGrid
                       items={filterGroupItemsByGender(group.items, form.careCategory, form.patient.gender)}
@@ -1483,41 +1496,53 @@ function App() {
               </div>
             </section>
 
-            <section className="section-block demo-block">
-              <h3>Demo Scenarios</h3>
+            <section className="workflow-section demo-block">
+              <SectionHeading
+                number="7"
+                title="Demo Scenarios"
+                helper="Load one of five prepared cases for a quick hackathon demonstration."
+              />
               <div className="demo-actions">
                 {DEMO_SCENARIOS.map((demo) => (
                   <button className="secondary-button" key={demo.label} onClick={() => applyDemoScenario(demo)} type="button">
                     {demo.label}
                   </button>
                 ))}
-                <button className="ghost-button" onClick={resetForm} type="button">
-                  Reset Form
-                </button>
               </div>
             </section>
 
-            {submitError ? <div className="error-box">{submitError}</div> : null}
-            {livePreviewChecking ? (
-              <div className="helper-copy live-status">Live STP check running...</div>
-            ) : null}
-            {livePreviewError ? <div className="error-box compact">{livePreviewError}</div> : null}
+            <section className="workflow-section submit-section">
+              <SectionHeading
+                number="8"
+                title="Submit + Result"
+                helper="Run the rule engine and conflict model. The adjudication result appears directly below."
+              />
+              {submitError ? <div className="error-box">{submitError}</div> : null}
+              {livePreviewChecking ? (
+                <div className="helper-copy live-status">Checking the current claim against the STP pathway...</div>
+              ) : null}
+              {livePreviewError ? <div className="error-box compact">{livePreviewError}</div> : null}
 
-            <div className="submit-row">
-              <button className="primary-button submit-button" disabled={submitLoading} type="submit">
-                {submitLoading ? "Submitting..." : "Submit Claim for STP Validation"}
-              </button>
-            </div>
+              <div className="submit-row">
+                <button className="primary-button submit-button" disabled={submitLoading} type="submit">
+                  {submitLoading ? "Submitting..." : "Submit Claim for STP Validation"}
+                </button>
+              </div>
+            </section>
           </div>
         </form>
 
         <section className="panel">
           <div className="panel-header">
-            <h2>ClaimGuard Adjudication Result</h2>
+            <div className="result-panel-title">
+              <div>
+                <h2>ClaimGuard Adjudication Result</h2>
+                <p>Compliance result for the selected ICD-to-STP pathway.</p>
+              </div>
+            </div>
           </div>
           <div className="panel-body result-stack">
             <ValidationCard
-              label={visibleResultLabel}
               result={visibleResult}
               emptyText="No validation result yet. Select a demo or submit a claim to validate."
             />
@@ -1652,19 +1677,6 @@ function App() {
         <div className="brand-block">
           <strong>ClaimGuard</strong>
         </div>
-        <div className="title-block">Emergency Claim Entry - ClaimGuard Pre-Adjudication Module</div>
-        <div className="meta-block">
-          <span>Health Facility: Dhulikhel Hospital | ClaimGuard v1.0</span>
-          <span className={`status-badge ${health.connected ? "online" : "offline"}`}>
-            {health.connected ? "API Connected" : "API Offline"}
-          </span>
-          <span className={`status-badge ${health.modelLoaded ? "online" : "offline"}`}>
-            {health.modelLoaded ? "Model Loaded" : "Model Offline"}
-          </span>
-          <span className="status-badge neutral">
-            Supported Conditions: {health.supportedCount || 14}
-          </span>
-        </div>
       </header>
 
       {!health.connected && !health.checking ? (
@@ -1696,9 +1708,6 @@ function App() {
               </button>
             ))}
           </nav>
-          <p className="sidebar-note">
-            One interface for emergency and basic care claim entry, live STP preview, and submitted validation.
-          </p>
         </aside>
 
         <main className="main-area">{renderActivePage()}</main>
