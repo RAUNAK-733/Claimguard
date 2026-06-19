@@ -1,0 +1,17 @@
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Local packaged artifacts
+*.zip
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
