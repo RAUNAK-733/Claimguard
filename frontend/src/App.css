@@ -646,10 +646,15 @@ button {
   justify-content: flex-end;
 }
 
+/* .submit-button {
+  min-width: 260px;
+} */
 .submit-button {
   min-width: 260px;
+  padding: 10px 22px;
+  display: block;
+  margin-right: auto;
 }
-
 .submit-button:disabled {
   cursor: wait;
   opacity: 0.7;

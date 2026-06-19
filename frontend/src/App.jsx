@@ -930,7 +930,7 @@ function ValidationCard({ result, emptyText }) {
         <ResultMetric label="Conflict Probability" value={formatPercent(result.ml_conflict_probability)} />
         <ResultMetric label="Final Risk Score" value={formatPercent(result.final_risk_score)} />
         <ResultMetric label="Suggested Action" value={result.suggested_action} />
-        <ResultMetric label="STP Pathway" value={pathway} />
+        {/* <ResultMetric label="STP Pathway" value={pathway} /> */}
       </div>
 
       {/* <div className="compliance-card">
@@ -1311,12 +1311,12 @@ function App() {
     }
 
     const recommended = selectedDiagnosis.recommended;
-    return (
-      <section className="workflow-section recommendation-section">
-        <SectionHeading
+    return
+      // <section className="workflow-section recommendation-section">
+        {/* <SectionHeading
           number="4"
           title="STP Recommendation"
-          subtitle="Recommended STP Services / Items"
+          // subtitle="Recommended STP Services / Items"
         />
         <div className="recommendation-panel">
           <div className="recommendation-block">
@@ -1343,9 +1343,10 @@ function App() {
               ))}
             </ul>
           </div>
-        </div>
-      </section>
-    );
+        </div> */}
+      // </section>
+      
+    // );
   }
 
   function renderClaimEntryPage() {
@@ -1356,15 +1357,15 @@ function App() {
 
     return (
       <section className="content-stack">
-        <div className="page-heading">
-          <h1>Emergency Claim Entry — ClaimGuard Compliance Module</h1>
+        {/* <div className="page-heading">
+          <h1>Entry</h1>
           <p>Follow the guided workflow to validate a claim against the selected Nepal STP 2078 pathway.</p>
-        </div>
+        </div> */}
 
         <form className="panel" onSubmit={submitClaim}>
           <div className="panel-header">
-            <h2>Guided Claim Entry</h2>
-            <span className="header-tag">ICD → STP → Evidence → Claim → Result</span>
+            <h2>Claim Entry</h2>
+            {/* <span className="header-tag">ICD → STP → Evidence → Claim → Result</span> */}
           </div>
 
           <div className="panel-body workflow-stack">
@@ -1430,10 +1431,10 @@ function App() {
               <SectionHeading
                 number="3"
                 title="ICD / Diagnosis"
-                helper="Select the diagnosis that determines the applicable STP pathway."
+                // helper="Select the diagnosis that determines the applicable STP pathway."
               />
               <div className="diagnosis-layout">
-                <Field label="ICD-10 / Diagnosis">
+                <Field >
                   <select onChange={(event) => changeDiagnosis(event.target.value)} value={form.icdCode}>
                     {availableDiagnoses.length === 0 ? (
                       <option value="">No diagnosis available</option>
@@ -1449,10 +1450,10 @@ function App() {
                     )}
                   </select>
                 </Field>
-                <div className="pathway-card full-width">
-                  <span>Selected STP Pathway</span>
-                  <strong>{selectedDiagnosis ? selectedDiagnosis.pathway : "Select a diagnosis to load the pathway."}</strong>
-                </div>
+                {/* <div className="pathway-card full-width"> */}
+                  {/* <span>Selected STP Pathway</span> */}
+                  {/* <strong>{selectedDiagnosis ? selectedDiagnosis.pathway : "Select a diagnosis to load the pathway."}</strong> */}
+                {/* </div> */}
               </div>
               {diagnosisResetNote ? <div className="inline-note">{diagnosisResetNote}</div> : null}
             </section>
@@ -1460,11 +1461,11 @@ function App() {
             {renderRecommendedPanel()}
 
             <section className="workflow-section">
-              <SectionHeading
-                number="5"
-                title="Clinical Findings / STP Evidence"
+              {/* <SectionHeading
+                number="4"
+                title="Clinical Findings Evidence"
                 helper="Select recorded clinical findings that justify the claimed services and medicines."
-              />
+              /> */}
               {selectedDiagnosis ? (
                 <CheckboxGrid
                   items={selectedDiagnosis.evidenceFlags}
@@ -1478,8 +1479,8 @@ function App() {
 
             <section className="workflow-section">
               <SectionHeading
-                number="6"
-                title="Claimed Services / Medicines"
+                number="4"
+                title="Claimed Services"
                 helper="Choose only the services, investigations, medicines, or procedures recorded for this claim."
               />
               <div className="group-stack">
@@ -1498,7 +1499,7 @@ function App() {
 
             <section className="workflow-section demo-block">
               <SectionHeading
-                number="7"
+                number="5"
                 title="Demo Scenarios"
                 helper="Load one of five prepared cases for a quick hackathon demonstration."
               />
@@ -1512,22 +1513,22 @@ function App() {
             </section>
 
             <section className="workflow-section submit-section">
-              <SectionHeading
-                number="8"
-                title="Submit + Result"
+              {/* <SectionHeading
+                number="7"
+                title="Submit"
                 helper="Run the rule engine and conflict model. The adjudication result appears directly below."
-              />
+              /> */}
               {submitError ? <div className="error-box">{submitError}</div> : null}
               {livePreviewChecking ? (
                 <div className="helper-copy live-status">Checking the current claim against the STP pathway...</div>
               ) : null}
               {livePreviewError ? <div className="error-box compact">{livePreviewError}</div> : null}
 
-              <div className="submit-row">
-                <button className="primary-button submit-button" disabled={submitLoading} type="submit">
-                  {submitLoading ? "Submitting..." : "Submit Claim for STP Validation"}
+              {/* <div className="submit-row"> */}
+                <button className="primary-button submit-button bg-blue-500" disabled={submitLoading} type="submit">
+                  {submitLoading ? "Submitting..." : "Submit"}
                 </button>
-              </div>
+              {/* </div> */}
             </section>
           </div>
         </form>
@@ -1536,8 +1537,8 @@ function App() {
           <div className="panel-header">
             <div className="result-panel-title">
               <div>
-                <h2>ClaimGuard Adjudication Result</h2>
-                <p>Compliance result for the selected ICD-to-STP pathway.</p>
+                <h2>Result</h2>
+                {/* <p>Compliance result for the selected ICD-to-STP pathway.</p> */}
               </div>
             </div>
           </div>
