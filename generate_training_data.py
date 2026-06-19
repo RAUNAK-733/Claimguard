@@ -1,23 +1,33 @@
-"""Generate synthetic emergency claim data labeled by rule_engine.py."""
+"""Generate synthetic emergency and basic-care claim data labeled by rule_engine.py."""
 
 import csv
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
-from rule_engine import PRICE_CATALOG, SERVICE_CATALOG, validate_claim
+from rule_engine import CONDITION_RULES, SERVICE_CATALOG, validate_claim
 
 
-ROWS_PER_CONDITION = 4000
-NON_CONFLICT_PER_CONDITION = 2000
-CONFLICT_PER_CONDITION = 2000
-TOTAL_ROWS = ROWS_PER_CONDITION * 3
+ROWS_PER_CONDITION = 2000
+NON_CONFLICT_PER_CONDITION = 1000
+CONFLICT_PER_CONDITION = 1000
 RANDOM_SEED = 42
 
-CONDITIONS = ["DROWNING", "SNAKE_BITE", "FALL_INJURY"]
-GENDERS = ["male", "female"]
-AGE_GROUPS = ["adult", "minor"]
-CARE_TYPES = ["outpatient", "inpatient"]
+EMERGENCY_CONDITIONS = ["DROWNING", "SNAKE_BITE", "FALL_INJURY"]
+BASIC_CONDITIONS = [
+    "HYPERTENSION",
+    "FEVER",
+    "DIARRHOEA",
+    "ANAEMIA",
+    "HIV",
+    "PROSTATE_SURGERY",
+    "TESTICULAR_ULTRASOUND",
+    "CIRCUMCISION",
+    "ANTENATAL_CARE",
+    "NORMAL_DELIVERY",
+    "CAESAREAN_SECTION",
+]
+ALL_CONDITIONS = EMERGENCY_CONDITIONS + BASIC_CONDITIONS
 
 CLINICAL_FLAGS = [
     "not_breathing",
@@ -38,108 +48,73 @@ CLINICAL_FLAGS = [
     "head_neck_trauma",
     "unconscious_or_low_gcs",
     "organ_injury_suspected",
+    "chest_pain_or_cardiac_risk",
+    "uncontrolled_bp",
+    "new_patient",
+    "travel_or_malaria_area",
+    "duration_more_than_3_days",
+    "respiratory_symptoms",
+    "bacterial_infection_suspected",
+    "dehydration_signs",
+    "blood_in_stool",
+    "amoebiasis_suspected",
+    "severe_anaemia_or_instability",
+    "b12_deficiency_suspected",
+    "severe_iron_deficiency",
+    "confirmed_diagnosis",
+    "on_art_already",
+    "opportunistic_infection_risk",
+    "urinary_retention",
+    "biopsy_confirmed",
+    "palpable_mass",
+    "infection_or_mass_suspected",
+    "phimosis_confirmed",
+    "recurrent_infection",
+    "medical_indication",
+    "first_visit",
+    "high_risk_pregnancy",
+    "routine_follow_up",
+    "full_term",
+    "active_labour",
+    "infection_risk",
+    "fetal_distress",
+    "failed_labour",
+    "prior_c_section",
+    "maternal_complication_or_shock",
 ]
 
-ITEMS = [
-    "emergency_assessment",
-    "airway_clearance",
-    "oxygen_support",
-    "cpr",
-    "iv_fluids",
-    "warming_blanket",
-    "referral",
-    "avpu_assessment",
-    "limb_immobilization",
-    "airway_monitoring",
-    "wound_cleaning",
-    "observation",
-    "anti_snake_venom",
-    "tetanus_toxoid",
-    "paracetamol",
-    "antibiotics",
-    "abcde_assessment",
-    "pain_management",
-    "xray",
-    "splinting",
-    "c_spine_protection",
-    "bleeding_control",
-    "surgery",
-    "icu_stay",
-    "mri",
-    "morphine",
-    "normal_delivery",
-    "antenatal_care",
-    "cosmetic_surgery",
-    "tourniquet",
-    "cut_wound",
-    "suction_bite",
-    "home_remedy",
-]
+ITEMS = sorted(SERVICE_CATALOG.keys())
 
-MEDICINE_ITEMS = {
-    "anti_snake_venom",
-    "tetanus_toxoid",
-    "paracetamol",
-    "antibiotics",
-    "morphine",
-}
 
-CORE_SERVICES = {
-    "DROWNING": [
-        "emergency_assessment",
-        "airway_clearance",
-        "oxygen_support",
-        "avpu_assessment",
-        "warming_blanket",
-        "referral",
-    ],
-    "SNAKE_BITE": [
-        "emergency_assessment",
-        "limb_immobilization",
-        "airway_monitoring",
-        "wound_cleaning",
-        "observation",
-    ],
-    "FALL_INJURY": [
-        "emergency_assessment",
-        "abcde_assessment",
-        "pain_management",
-    ],
-}
-
-CONFLICT_PATTERNS = [
-    ("DROWNING", "cpr_without_breathing"),
-    ("DROWNING", "mri_without_evidence"),
-    ("DROWNING", "normal_delivery"),
-    ("DROWNING", "antenatal_care"),
-    ("DROWNING", "high_amount"),
-    ("SNAKE_BITE", "asv_without_evidence"),
-    ("SNAKE_BITE", "tourniquet"),
-    ("SNAKE_BITE", "cut_wound"),
-    ("SNAKE_BITE", "suction_bite"),
-    ("SNAKE_BITE", "home_remedy"),
-    ("SNAKE_BITE", "antibiotics_without_infection"),
-    ("SNAKE_BITE", "high_amount"),
-    ("FALL_INJURY", "surgery_without_evidence"),
-    ("FALL_INJURY", "icu_without_evidence"),
-    ("FALL_INJURY", "mri_without_evidence"),
-    ("FALL_INJURY", "high_amount"),
-    ("DROWNING", "gender_mismatch"),
-    ("SNAKE_BITE", "age_mismatch"),
-    ("FALL_INJURY", "care_type_mismatch"),
-    ("FALL_INJURY", "multiple_high_cost_weak_evidence"),
-]
+def _new_claim(condition_code):
+    """Create a clean claim shell for one condition."""
+    rule = CONDITION_RULES[condition_code]
+    required_gender = rule.get("required_gender")
+    return {
+        "condition_code": condition_code,
+        "patient": {
+            "gender": required_gender or random.choice(["male", "female"]),
+            "age_group": "adult",
+            "care_type": "outpatient",
+            "care_category": rule["care_category"],
+        },
+        "clinical_conditions": {flag: False for flag in CLINICAL_FLAGS},
+        "services": [],
+        "medicines": [],
+        "claimed_amount": 0,
+    }
 
 
 def _add_item(claim, item):
-    """Add an item to the correct claim list without duplicates."""
-    target = claim["medicines"] if item in MEDICINE_ITEMS else claim["services"]
-    if item not in target:
-        target.append(item)
+    """Add an item into services or medicines without duplicates."""
+    metadata = SERVICE_CATALOG.get(item, {})
+    target_name = "medicines" if metadata.get("category") == "medicine" else "services"
+    if item not in claim[target_name]:
+        claim[target_name].append(item)
 
 
 def _remove_item(claim, item):
-    """Remove an item from services or medicines when present."""
+    """Remove an item from the claim when present."""
     if item in claim["services"]:
         claim["services"].remove(item)
     if item in claim["medicines"]:
@@ -147,80 +122,28 @@ def _remove_item(claim, item):
 
 
 def _catalog_total(claim):
-    """Calculate the catalog total before calling the rule engine."""
-    items = claim["services"] + claim["medicines"]
-    return sum(PRICE_CATALOG.get(item, 0) for item in items)
+    """Calculate the raw catalog total before validation."""
+    total = 0
+    for item in claim["services"] + claim["medicines"]:
+        total += SERVICE_CATALOG.get(item, {}).get("price", 0)
+    return total
 
 
 def _set_claimed_amount(claim, minimum_ratio, maximum_ratio):
     """Set a random claimed amount relative to the catalog total."""
     expected_total = _catalog_total(claim)
     base_total = expected_total if expected_total > 0 else 500
-    ratio = random.uniform(minimum_ratio, maximum_ratio)
-    claim["claimed_amount"] = round(base_total * ratio, 2)
+    claim["claimed_amount"] = round(
+        base_total * random.uniform(minimum_ratio, maximum_ratio),
+        2,
+    )
 
 
-def _new_claim(condition_code):
-    """Create a clean claim with the core pathway for one condition."""
-    medicines = []
-    if condition_code == "SNAKE_BITE":
-        medicines = ["tetanus_toxoid", "paracetamol"]
-
-    return {
-        "condition_code": condition_code,
-        "patient": {
-            "gender": random.choice(GENDERS),
-            "age_group": random.choice(AGE_GROUPS),
-            "care_type": random.choices(
-                CARE_TYPES,
-                weights=[80, 20],
-                k=1,
-            )[0],
-        },
-        "clinical_conditions": {
-            flag: False for flag in CLINICAL_FLAGS
-        },
-        "services": list(CORE_SERVICES[condition_code]),
-        "medicines": medicines,
-        "claimed_amount": 0,
-    }
-
-
-def _occasionally_omit_core_services(claim):
-    """Create ACCEPT and WARNING variations without creating conflicts."""
-    roll = random.random()
-    condition_code = claim["condition_code"]
-
-    if roll < 0.70:
-        return
-    if roll < 0.85:
-        removable = [
-            item
-            for item in CORE_SERVICES[condition_code]
-            if item != "emergency_assessment"
-        ]
-        _remove_item(claim, random.choice(removable))
-        return
-    if roll < 0.95:
-        _remove_item(claim, "emergency_assessment")
-        return
-
-    _remove_item(claim, "emergency_assessment")
-    removable = [
-        item
-        for item in CORE_SERVICES[condition_code]
-        if item != "emergency_assessment"
-    ]
-    _remove_item(claim, random.choice(removable))
-
-
-def _use_inpatient_care_when_required(claim):
-    """Keep valid claims consistent with inpatient-only catalog metadata."""
-    claimed_items = claim["services"] + claim["medicines"]
+def _use_inpatient_when_needed(claim):
+    """Align care type with inpatient-only procedures when needed."""
     if any(
-        SERVICE_CATALOG[item]["care_type"] == "inpatient"
-        for item in claimed_items
-        if item in SERVICE_CATALOG
+        SERVICE_CATALOG.get(item, {}).get("care_type") == "inpatient"
+        for item in claim["services"] + claim["medicines"]
     ):
         claim["patient"]["care_type"] = "inpatient"
 
@@ -231,60 +154,75 @@ def _build_valid_claim(condition_code):
     evidence = claim["clinical_conditions"]
 
     if condition_code == "DROWNING":
-        evidence["not_breathing"] = random.random() < 0.25
-        evidence["aspiration_risk"] = random.random() < 0.45
+        evidence["not_breathing"] = random.random() < 0.35
+        evidence["aspiration_risk"] = True
+        evidence["hypothermia"] = random.random() < 0.45
         evidence["hypovolemia_or_shock"] = random.random() < 0.20
-        evidence["hypothermia"] = random.random() < 0.35
-        evidence["associated_trauma"] = random.random() < 0.15
-        evidence["neurological_concern"] = random.random() < 0.15
-
+        evidence["associated_trauma"] = random.random() < 0.10
+        evidence["neurological_concern"] = random.random() < 0.10
+        for item in [
+            "emergency_assessment",
+            "airway_clearance",
+            "oxygen_support",
+            "warming_blanket",
+            "referral",
+            "avpu_assessment",
+            "oxygen",
+        ]:
+            _add_item(claim, item)
         if evidence["not_breathing"]:
             _add_item(claim, "cpr")
         if evidence["hypovolemia_or_shock"]:
             _add_item(claim, "iv_fluids")
-        if evidence["associated_trauma"] and random.random() < 0.45:
+        if evidence["associated_trauma"]:
             _add_item(claim, "surgery")
-        if (
-            evidence["associated_trauma"]
-            or evidence["neurological_concern"]
-        ) and random.random() < 0.55:
+        if evidence["associated_trauma"] or evidence["neurological_concern"]:
             _add_item(claim, "mri")
 
     elif condition_code == "SNAKE_BITE":
-        evidence["neurotoxicity"] = random.random() < 0.18
-        evidence["coagulopathy_or_bleeding"] = random.random() < 0.16
+        evidence["neurotoxicity"] = random.random() < 0.30
+        evidence["respiratory_difficulty"] = random.random() < 0.30
         evidence["shock"] = random.random() < 0.12
-        evidence["acute_kidney_injury"] = random.random() < 0.10
-        evidence["respiratory_difficulty"] = random.random() < 0.15
-        evidence["wound_infection"] = random.random() < 0.20
-
-        envenomation_flags = [
-            "neurotoxicity",
-            "coagulopathy_or_bleeding",
-            "shock",
-            "acute_kidney_injury",
-            "respiratory_difficulty",
-        ]
-        if any(evidence[flag] for flag in envenomation_flags):
+        evidence["wound_infection"] = random.random() < 0.18
+        for item in [
+            "emergency_assessment",
+            "limb_immobilization",
+            "airway_monitoring",
+            "wound_cleaning",
+            "observation",
+            "tetanus_toxoid",
+            "paracetamol",
+        ]:
+            _add_item(claim, item)
+        if any(
+            evidence[flag]
+            for flag in [
+                "neurotoxicity",
+                "coagulopathy_or_bleeding",
+                "shock",
+                "acute_kidney_injury",
+                "respiratory_difficulty",
+            ]
+        ):
             _add_item(claim, "anti_snake_venom")
             _add_item(claim, "referral")
-        if evidence["wound_infection"]:
-            _add_item(claim, "antibiotics")
-        if evidence["shock"]:
-            _add_item(claim, "iv_fluids")
         if evidence["respiratory_difficulty"]:
             _add_item(claim, "oxygen_support")
+        if evidence["shock"]:
+            _add_item(claim, "iv_fluids")
+        if evidence["wound_infection"]:
+            _add_item(claim, "antibiotics")
 
-    else:
-        evidence["fracture_suspected"] = random.random() < 0.38
+    elif condition_code == "FALL_INJURY":
+        evidence["fracture_suspected"] = random.random() < 0.45
         evidence["open_wound"] = random.random() < 0.25
-        evidence["active_bleeding"] = random.random() < 0.18
-        evidence["head_neck_trauma"] = random.random() < 0.20
-        evidence["unconscious_or_low_gcs"] = random.random() < 0.10
-        evidence["shock"] = random.random() < 0.10
-        evidence["organ_injury_suspected"] = random.random() < 0.14
+        evidence["active_bleeding"] = random.random() < 0.20
+        evidence["head_neck_trauma"] = random.random() < 0.22
+        evidence["organ_injury_suspected"] = random.random() < 0.12
         evidence["neurological_concern"] = random.random() < 0.12
-
+        evidence["unconscious_or_low_gcs"] = random.random() < 0.08
+        for item in ["emergency_assessment", "abcde_assessment", "pain_management"]:
+            _add_item(claim, item)
         if (
             evidence["fracture_suspected"]
             or evidence["head_neck_trauma"]
@@ -297,6 +235,9 @@ def _build_valid_claim(condition_code):
             _add_item(claim, "c_spine_protection")
         if evidence["active_bleeding"]:
             _add_item(claim, "bleeding_control")
+        if evidence["open_wound"]:
+            _add_item(claim, "wound_cleaning")
+            _add_item(claim, "tetanus_toxoid")
         if (
             evidence["open_wound"]
             or evidence["fracture_suspected"]
@@ -307,132 +248,410 @@ def _build_valid_claim(condition_code):
             evidence["unconscious_or_low_gcs"]
             or evidence["shock"]
             or evidence["organ_injury_suspected"]
-        ) and random.random() < 0.45:
+        ) and random.random() < 0.35:
             _add_item(claim, "icu_stay")
         if (
             evidence["head_neck_trauma"]
             or evidence["neurological_concern"]
             or evidence["organ_injury_suspected"]
-        ) and random.random() < 0.45:
+        ) and random.random() < 0.40:
             _add_item(claim, "mri")
-        if evidence["open_wound"]:
-            _add_item(claim, "wound_cleaning")
-            _add_item(claim, "tetanus_toxoid")
-            if random.random() < 0.70:
-                _add_item(claim, "antibiotics")
-        if (
-            evidence["unconscious_or_low_gcs"]
-            or evidence["shock"]
-            or evidence["organ_injury_suspected"]
-            or evidence["fracture_suspected"]
-        ):
-            _add_item(claim, "referral")
         if (
             evidence["fracture_suspected"]
             or evidence["open_wound"]
             or evidence["organ_injury_suspected"]
-        ) and random.random() < 0.40:
+        ) and random.random() < 0.35:
             _add_item(claim, "morphine")
+        if any(
+            evidence[flag]
+            for flag in [
+                "unconscious_or_low_gcs",
+                "shock",
+                "organ_injury_suspected",
+                "fracture_suspected",
+            ]
+        ):
+            _add_item(claim, "referral")
 
-    _occasionally_omit_core_services(claim)
-    _use_inpatient_care_when_required(claim)
-    _set_claimed_amount(claim, 0.80, 1.40)
+    elif condition_code == "HYPERTENSION":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        evidence["new_patient"] = random.random() < 0.60
+        evidence["uncontrolled_bp"] = random.random() < 0.45
+        for item in ["consultation", "bp_measurement"]:
+            _add_item(claim, item)
+        _add_item(claim, random.choice(["amlodipine", "losartan", "enalapril"]))
+        if evidence["new_patient"] or evidence["uncontrolled_bp"]:
+            for item in random.sample(
+                ["urea_creatinine", "urine_analysis", "lipid_profile", "blood_glucose"],
+                k=random.randint(1, 3),
+            ):
+                _add_item(claim, item)
+        if random.random() < 0.20:
+            evidence["chest_pain_or_cardiac_risk"] = True
+            _add_item(claim, "ecg")
+
+    elif condition_code == "FEVER":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        evidence["bacterial_infection_suspected"] = random.random() < 0.25
+        for item in ["consultation", "paracetamol"]:
+            _add_item(claim, item)
+        if random.random() < 0.60:
+            _add_item(claim, "cbc")
+        if random.random() < 0.40:
+            _add_item(claim, "oral_fluids")
+        if random.random() < 0.20:
+            evidence["travel_or_malaria_area"] = True
+            _add_item(claim, "malaria_test")
+        if random.random() < 0.15:
+            evidence["duration_more_than_3_days"] = True
+            _add_item(claim, "blood_culture")
+        if random.random() < 0.18:
+            evidence["respiratory_symptoms"] = True
+            _add_item(claim, "chest_xray")
+        if evidence["bacterial_infection_suspected"]:
+            _add_item(claim, "antibiotics")
+
+    elif condition_code == "DIARRHOEA":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "ors", "dehydration_assessment", "zinc_sulfate"]:
+            _add_item(claim, item)
+        if random.random() < 0.50:
+            _add_item(claim, "stool_routine")
+        if random.random() < 0.35:
+            evidence["dehydration_signs"] = True
+            _add_item(claim, random.choice(["normal_saline", "ringer_lactate", "iv_fluids"]))
+        if random.random() < 0.15:
+            evidence["blood_in_stool"] = True
+            _add_item(claim, "stool_culture")
+        if random.random() < 0.10:
+            evidence["amoebiasis_suspected"] = True
+            _add_item(claim, "metronidazole")
+        if random.random() < 0.12:
+            evidence["bacterial_infection_suspected"] = True
+            _add_item(claim, "azithromycin")
+
+    elif condition_code == "ANAEMIA":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "cbc", "haemoglobin_test", "ferrous_sulfate"]:
+            _add_item(claim, item)
+        if random.random() < 0.55:
+            _add_item(claim, "serum_ferritin")
+        if random.random() < 0.20:
+            evidence["b12_deficiency_suspected"] = True
+            _add_item(claim, "vitamin_b12")
+        if random.random() < 0.18:
+            evidence["severe_iron_deficiency"] = True
+            claim["patient"]["care_type"] = "inpatient"
+            _add_item(claim, "iron_sucrose")
+
+    elif condition_code == "HIV":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "counselling", "hiv_rapid_test", "elisa"]:
+            _add_item(claim, item)
+        if random.random() < 0.55:
+            evidence["confirmed_diagnosis"] = True
+            _add_item(claim, "tld_regimen")
+            _add_item(claim, "cd4_count")
+        if random.random() < 0.20:
+            evidence["on_art_already"] = True
+            _add_item(claim, "viral_load")
+        if random.random() < 0.20:
+            evidence["opportunistic_infection_risk"] = True
+            _add_item(claim, "cotrimoxazole")
+        if random.random() < 0.40:
+            _add_item(claim, "cbc")
+
+    elif condition_code == "PROSTATE_SURGERY":
+        claim["patient"]["gender"] = "male"
+        claim["patient"]["care_type"] = "inpatient"
+        evidence["urinary_retention"] = random.random() < 0.55
+        evidence["biopsy_confirmed"] = random.random() < 0.30
+        for item in ["consultation", "psa_test", "ultrasound_kub_prostate", "cbc", "urine_analysis"]:
+            _add_item(claim, item)
+        if evidence["urinary_retention"] or evidence["biopsy_confirmed"]:
+            _add_item(claim, "prostate_surgery")
+            _add_item(claim, "anesthesia")
+        if evidence["urinary_retention"]:
+            _add_item(claim, "catheter")
+        _add_item(claim, "ceftriaxone")
+
+    elif condition_code == "TESTICULAR_ULTRASOUND":
+        claim["patient"]["gender"] = "male"
+        for item in ["consultation", "scrotal_ultrasound_doppler", "urine_analysis"]:
+            _add_item(claim, item)
+        if random.random() < 0.20:
+            evidence["palpable_mass"] = True
+            _add_item(claim, "tumor_markers")
+        if random.random() < 0.20:
+            evidence["infection_or_mass_suspected"] = True
+            _add_item(claim, random.choice(["doxycycline", "ceftriaxone"]))
+
+    elif condition_code == "CIRCUMCISION":
+        claim["patient"]["gender"] = "male"
+        claim["patient"]["care_type"] = "outpatient"
+        evidence["phimosis_confirmed"] = random.random() < 0.55
+        evidence["recurrent_infection"] = random.random() < 0.20
+        evidence["medical_indication"] = random.random() < 0.20
+        _add_item(claim, "consultation")
+        if (
+            evidence["phimosis_confirmed"]
+            or evidence["recurrent_infection"]
+            or evidence["medical_indication"]
+        ):
+            _add_item(claim, "circumcision")
+            _add_item(claim, "local_anesthesia")
+            _add_item(claim, "wound_care")
+            _add_item(claim, "lidocaine")
+        if evidence["recurrent_infection"]:
+            _add_item(claim, random.choice(["amoxicillin", "cloxacillin"]))
+
+    elif condition_code == "ANTENATAL_CARE":
+        claim["patient"]["gender"] = "female"
+        for item in ["consultation", "iron_folic", "cbc", "blood_group_rh", "urine_routine"]:
+            _add_item(claim, item)
+        if random.random() < 0.40:
+            evidence["first_visit"] = True
+            _add_item(claim, "obstetric_ultrasound")
+            _add_item(claim, "tetanus_diphtheria_vaccine")
+        elif random.random() < 0.25:
+            evidence["routine_follow_up"] = True
+            _add_item(claim, "tetanus_diphtheria_vaccine")
+
+    elif condition_code == "NORMAL_DELIVERY":
+        claim["patient"]["gender"] = "female"
+        claim["patient"]["care_type"] = "inpatient"
+        evidence["active_labour"] = True
+        evidence["full_term"] = random.random() < 0.70
+        for item in ["consultation", "delivery_care", "cbc", "blood_group_rh", "urine_examination"]:
+            _add_item(claim, item)
+        if evidence["full_term"]:
+            _add_item(claim, "newborn_care")
+        if evidence["active_labour"]:
+            _add_item(claim, "oxytocin")
+        if random.random() < 0.15:
+            evidence["infection_risk"] = True
+            _add_item(claim, "antibiotics")
+
+    elif condition_code == "CAESAREAN_SECTION":
+        claim["patient"]["gender"] = "female"
+        claim["patient"]["care_type"] = "inpatient"
+        evidence["fetal_distress"] = random.random() < 0.40
+        evidence["failed_labour"] = random.random() < 0.30
+        evidence["prior_c_section"] = random.random() < 0.20
+        for item in ["consultation", "caesarean_section", "anesthesia", "cbc", "blood_group_crossmatch"]:
+            _add_item(claim, item)
+        _add_item(claim, random.choice(["cefazolin", "ceftriaxone"]))
+        _add_item(claim, "iv_fluids")
+        if random.random() < 0.60:
+            _add_item(claim, "newborn_care")
+        if random.random() < 0.12:
+            evidence["maternal_complication_or_shock"] = True
+            _add_item(claim, "icu_stay")
+
+    _use_inpatient_when_needed(claim)
+    _set_claimed_amount(claim, 0.85, 1.30)
     return claim
 
 
-def _build_conflicting_claim(condition_code, pattern):
-    """Build a claim containing a known conflict pattern."""
+def _build_conflicting_claim(condition_code, pattern_name):
+    """Build a claim containing one known conflict pattern."""
     claim = _new_claim(condition_code)
     evidence = claim["clinical_conditions"]
 
-    if pattern == "cpr_without_breathing":
-        evidence["not_breathing"] = False
-        _add_item(claim, "cpr")
-        _remove_item(claim, "emergency_assessment")
-        _remove_item(claim, "airway_clearance")
+    if condition_code == "DROWNING":
+        for item in ["emergency_assessment", "cpr", "oxygen", "mri", "surgery", "icu_stay"]:
+            _add_item(claim, item)
+        claim["patient"]["care_type"] = "outpatient"
+        if pattern_name == "normal_delivery":
+            _add_item(claim, "normal_delivery")
+        elif pattern_name == "antenatal_care":
+            _add_item(claim, "antenatal_care")
+        elif pattern_name == "high_amount":
+            _remove_item(claim, "surgery")
+        evidence["aspiration_risk"] = True
 
-    elif pattern == "mri_without_evidence":
-        evidence["associated_trauma"] = False
-        evidence["neurological_concern"] = False
-        evidence["head_neck_trauma"] = False
-        evidence["organ_injury_suspected"] = False
-        _add_item(claim, "mri")
-        _remove_item(claim, "emergency_assessment")
-        second_core = (
-            "airway_clearance"
-            if condition_code == "DROWNING"
-            else "abcde_assessment"
-        )
-        _remove_item(claim, second_core)
+    elif condition_code == "SNAKE_BITE":
+        for item in ["emergency_assessment", "limb_immobilization", "observation", "anti_snake_venom"]:
+            _add_item(claim, item)
+        if pattern_name == "tourniquet":
+            _add_item(claim, "tourniquet")
+        elif pattern_name == "cut_wound":
+            _add_item(claim, "cut_wound")
+        elif pattern_name == "suction_bite":
+            _add_item(claim, "suction_bite")
+        elif pattern_name == "home_remedy":
+            _add_item(claim, "home_remedy")
+        elif pattern_name == "normal_delivery":
+            _add_item(claim, "normal_delivery")
+        elif pattern_name == "antibiotics_without_infection":
+            _add_item(claim, "antibiotics")
+        elif pattern_name == "high_amount":
+            _remove_item(claim, "anti_snake_venom")
+            _add_item(claim, "observation")
 
-    elif pattern in {
-        "normal_delivery",
-        "antenatal_care",
-        "tourniquet",
-        "cut_wound",
-        "suction_bite",
-        "home_remedy",
-    }:
-        _add_item(claim, pattern)
+    elif condition_code == "FALL_INJURY":
+        for item in ["emergency_assessment", "mri", "surgery", "icu_stay", "morphine"]:
+            _add_item(claim, item)
+        claim["patient"]["care_type"] = "outpatient"
+        if pattern_name == "care_type_mismatch":
+            _add_item(claim, "referral")
+        elif pattern_name == "high_amount":
+            _remove_item(claim, "morphine")
 
-    elif pattern == "asv_without_evidence":
-        _add_item(claim, "anti_snake_venom")
-        _remove_item(claim, "airway_monitoring")
-        _remove_item(claim, "wound_cleaning")
+    elif condition_code == "HYPERTENSION":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "bp_measurement", "amlodipine"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "lipid_profile")
+        else:
+            _add_item(claim, random.choice(["surgery", "icu_stay", "mri"]))
 
-    elif pattern == "antibiotics_without_infection":
-        evidence["wound_infection"] = False
-        _add_item(claim, "antibiotics")
-        _remove_item(claim, "emergency_assessment")
+    elif condition_code == "FEVER":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "paracetamol"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "cbc")
+        else:
+            _add_item(claim, random.choice(["surgery", "icu_stay", "mri", "anti_snake_venom"]))
 
-    elif pattern == "surgery_without_evidence":
-        evidence["fracture_suspected"] = False
-        evidence["open_wound"] = False
-        evidence["organ_injury_suspected"] = False
-        _add_item(claim, "surgery")
-        _remove_item(claim, "abcde_assessment")
-        _remove_item(claim, "pain_management")
+    elif condition_code == "DIARRHOEA":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "ors", "dehydration_assessment"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "stool_routine")
+        else:
+            _add_item(claim, random.choice(["surgery", "mri", "anti_snake_venom"]))
 
-    elif pattern == "icu_without_evidence":
-        evidence["unconscious_or_low_gcs"] = False
-        evidence["shock"] = False
-        evidence["organ_injury_suspected"] = False
-        _add_item(claim, "icu_stay")
-        _remove_item(claim, "abcde_assessment")
-        _remove_item(claim, "pain_management")
+    elif condition_code == "ANAEMIA":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "cbc", "haemoglobin_test"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "serum_ferritin")
+        else:
+            _add_item(claim, "blood_transfusion")
+            claim["patient"]["care_type"] = "inpatient"
 
-    elif pattern == "gender_mismatch":
-        claim["patient"]["gender"] = "male"
-        claim["patient"]["age_group"] = "adult"
+    elif condition_code == "HIV":
+        claim["patient"]["gender"] = random.choice(["male", "female"])
+        for item in ["consultation", "counselling"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "viral_load")
+        else:
+            _add_item(claim, "tld_regimen")
+
+    elif condition_code == "PROSTATE_SURGERY":
+        claim["patient"]["gender"] = "female" if pattern_name == "gender_mismatch" else "male"
         claim["patient"]["care_type"] = "inpatient"
-        _add_item(claim, "normal_delivery")
+        for item in ["consultation", "psa_test", "ultrasound_kub_prostate", "prostate_surgery"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "anesthesia")
+        evidence["urinary_retention"] = False
+        evidence["biopsy_confirmed"] = False
 
-    elif pattern == "age_mismatch":
-        claim["patient"]["gender"] = "female"
-        claim["patient"]["age_group"] = "minor"
-        _add_item(claim, "antenatal_care")
+    elif condition_code == "TESTICULAR_ULTRASOUND":
+        claim["patient"]["gender"] = "female" if pattern_name == "gender_mismatch" else "male"
+        for item in ["consultation", "scrotal_ultrasound_doppler"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "tumor_markers")
 
-    elif pattern == "care_type_mismatch":
-        claim["patient"]["care_type"] = "outpatient"
-        evidence["fracture_suspected"] = True
-        _add_item(claim, "xray")
-        _add_item(claim, "splinting")
-        _add_item(claim, "surgery")
-        _add_item(claim, "referral")
+    elif condition_code == "CIRCUMCISION":
+        claim["patient"]["gender"] = "female" if pattern_name == "gender_mismatch" else "male"
+        for item in ["consultation", "circumcision"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "local_anesthesia")
+        evidence["phimosis_confirmed"] = False
+        evidence["recurrent_infection"] = False
+        evidence["medical_indication"] = False
 
-    elif pattern == "multiple_high_cost_weak_evidence":
-        claim["patient"]["care_type"] = "outpatient"
-        _add_item(claim, "mri")
-        _add_item(claim, "surgery")
+    elif condition_code == "ANTENATAL_CARE":
+        claim["patient"]["gender"] = "male" if pattern_name == "gender_mismatch" else "female"
+        for item in ["consultation", "iron_folic"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "obstetric_ultrasound")
+        else:
+            _add_item(claim, random.choice(["prostate_surgery", "circumcision", "scrotal_ultrasound_doppler"]))
 
-    if pattern == "high_amount":
-        _set_claimed_amount(claim, 3.20, 4.80)
-    elif pattern == "antibiotics_without_infection":
-        _set_claimed_amount(claim, 1.60, 2.20)
+    elif condition_code == "NORMAL_DELIVERY":
+        claim["patient"]["gender"] = "male" if pattern_name == "gender_mismatch" else "female"
+        claim["patient"]["care_type"] = "inpatient"
+        for item in ["consultation", "delivery_care"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "newborn_care")
+        else:
+            _add_item(claim, random.choice(["prostate_surgery", "circumcision", "scrotal_ultrasound_doppler"]))
+
+    elif condition_code == "CAESAREAN_SECTION":
+        claim["patient"]["gender"] = "male" if pattern_name == "gender_mismatch" else "female"
+        claim["patient"]["care_type"] = "inpatient"
+        for item in ["consultation", "caesarean_section", "anesthesia"]:
+            _add_item(claim, item)
+        if pattern_name == "high_amount":
+            _add_item(claim, "icu_stay")
+        evidence["fetal_distress"] = False
+        evidence["failed_labour"] = False
+        evidence["prior_c_section"] = False
+        evidence["maternal_complication_or_shock"] = False
+
+    if pattern_name == "high_amount":
+        _set_claimed_amount(claim, 2.80, 4.20)
     else:
-        _set_claimed_amount(claim, 0.90, 1.30)
-
+        _set_claimed_amount(claim, 0.95, 1.35)
     return claim
+
+
+CONFLICT_PATTERNS = {
+    "DROWNING": ["cpr_without_breathing", "mri_without_evidence", "normal_delivery", "antenatal_care", "high_amount"],
+    "SNAKE_BITE": ["asv_without_evidence", "tourniquet", "cut_wound", "suction_bite", "home_remedy", "antibiotics_without_infection", "high_amount", "normal_delivery"],
+    "FALL_INJURY": ["surgery_without_evidence", "icu_without_evidence", "mri_without_evidence", "care_type_mismatch", "high_amount"],
+    "HYPERTENSION": ["forbidden_high_cost", "high_amount"],
+    "FEVER": ["forbidden_high_cost", "high_amount"],
+    "DIARRHOEA": ["forbidden_high_cost", "high_amount"],
+    "ANAEMIA": ["blood_transfusion_without_evidence", "high_amount"],
+    "HIV": ["art_without_confirmed_diagnosis", "high_amount"],
+    "PROSTATE_SURGERY": ["gender_mismatch", "missing_indication", "high_amount"],
+    "TESTICULAR_ULTRASOUND": ["gender_mismatch", "high_amount"],
+    "CIRCUMCISION": ["gender_mismatch", "missing_indication", "high_amount"],
+    "ANTENATAL_CARE": ["gender_mismatch", "male_procedure", "high_amount"],
+    "NORMAL_DELIVERY": ["gender_mismatch", "male_procedure", "high_amount"],
+    "CAESAREAN_SECTION": ["gender_mismatch", "missing_indication", "high_amount"],
+}
+
+
+def _materialize_conflict_pattern(condition_code, pattern_name):
+    """Map named pattern families into a concrete conflicting claim."""
+    mapping = {
+        "cpr_without_breathing": "cpr_without_breathing",
+        "mri_without_evidence": "mri_without_evidence",
+        "normal_delivery": "normal_delivery",
+        "antenatal_care": "antenatal_care",
+        "asv_without_evidence": "asv_without_evidence",
+        "tourniquet": "tourniquet",
+        "cut_wound": "cut_wound",
+        "suction_bite": "suction_bite",
+        "home_remedy": "home_remedy",
+        "antibiotics_without_infection": "antibiotics_without_infection",
+        "surgery_without_evidence": "surgery_without_evidence",
+        "icu_without_evidence": "icu_without_evidence",
+        "care_type_mismatch": "care_type_mismatch",
+        "forbidden_high_cost": "forbidden_high_cost",
+        "blood_transfusion_without_evidence": "blood_transfusion_without_evidence",
+        "art_without_confirmed_diagnosis": "art_without_confirmed_diagnosis",
+        "gender_mismatch": "gender_mismatch",
+        "male_procedure": "male_procedure",
+        "missing_indication": "missing_indication",
+        "high_amount": "high_amount",
+    }
+    return _build_conflicting_claim(condition_code, mapping[pattern_name])
 
 
 def _claim_to_row(claim):
@@ -445,23 +664,17 @@ def _claim_to_row(claim):
         claim["medicines"],
         claim["claimed_amount"],
     )
-
+    checks = result["openimis_checks"]
     all_items = set(claim["services"] + claim["medicines"])
-    catalog_entries = [
-        SERVICE_CATALOG[item]
-        for item in all_items
-        if item in SERVICE_CATALOG
-    ]
-    openimis_checks = result["openimis_checks"]
-    conflict_label = int(
-        result["decision"] in {"REVIEW_REQUIRED", "REJECT_ENTRY"}
-    )
+    conflict_label = int(result["decision"] in {"REVIEW_REQUIRED", "REJECT_ENTRY"})
 
     row = {
+        "care_category": result.get("care_category", ""),
+        "icd_code": result.get("icd_code", ""),
         "condition_code": claim["condition_code"],
-        "gender": claim["patient"]["gender"],
-        "age_group": claim["patient"]["age_group"],
-        "care_type": result["patient"]["care_type"],
+        "gender": result["patient"].get("gender", ""),
+        "age_group": result["patient"].get("age_group", ""),
+        "care_type": result["patient"].get("care_type", ""),
         "claimed_amount": claim["claimed_amount"],
     }
 
@@ -474,71 +687,15 @@ def _claim_to_row(claim):
     row.update(
         {
             "expected_total": result["expected_total"],
-            "amount_ratio": (
-                result["amount_ratio"]
-                if result["amount_ratio"] is not None
-                else ""
-            ),
+            "amount_ratio": result["amount_ratio"] if result["amount_ratio"] is not None else "",
             "service_count": len(claim["services"]),
             "medicine_count": len(claim["medicines"]),
-            "has_gender_mismatch": int(
-                openimis_checks["gender_mismatch"]
-            ),
-            "has_age_mismatch": int(
-                openimis_checks["age_mismatch"]
-            ),
-            "has_care_type_mismatch": int(
-                openimis_checks["care_type_mismatch"]
-            ),
-            "has_max_amount_violation": int(
-                openimis_checks["max_amount_violation"]
-            ),
-            "high_cost_count": openimis_checks["high_cost_count"],
-            "has_multiple_high_cost_items": int(
-                openimis_checks["high_cost_count"] >= 2
-            ),
-            "has_inpatient_only_service": int(
-                any(
-                    metadata["care_type"] == "inpatient"
-                    for metadata in catalog_entries
-                )
-            ),
-            "has_outpatient_service": int(
-                any(
-                    metadata["care_type"] == "outpatient"
-                    for metadata in catalog_entries
-                )
-            ),
-            "has_emergency_service": int(
-                any(
-                    metadata["category"] == "emergency_care"
-                    for metadata in catalog_entries
-                )
-            ),
-            "has_investigation": int(
-                any(
-                    metadata["category"] == "investigation"
-                    for metadata in catalog_entries
-                )
-            ),
-            "has_procedure": int(
-                any(
-                    metadata["category"] == "procedure"
-                    for metadata in catalog_entries
-                )
-            ),
-            "has_medicine": int(
-                any(
-                    metadata["category"] == "medicine"
-                    for metadata in catalog_entries
-                )
-            ),
-            "has_referral": int(
-                any(
-                    metadata["category"] == "referral"
-                    for metadata in catalog_entries
-                )
-            ),
+            "high_cost_count": int(checks["high_cost_count"]),
+            "gender_mismatch": int(checks["gender_mismatch"]),
+            "age_mismatch": int(checks["age_mismatch"]),
+            "care_type_mismatch": int(checks["care_type_mismatch"]),
+            "max_amount_violation": int(checks["max_amount_violation"]),
+            "unknown_item_count": int(checks["unknown_item_count"]),
             "decision": result["decision"],
             "compliance_score": result["compliance_score"],
             "legitimacy_score": result["legitimacy_score"],
@@ -549,35 +706,28 @@ def _claim_to_row(claim):
 
 
 def generate_dataset():
-    """Generate an exactly balanced dataset for every diagnosis."""
+    """Generate a balanced dataset across all supported conditions."""
     random.seed(RANDOM_SEED)
     rows = []
 
-    for condition_code in CONDITIONS:
-        non_conflict_rows = []
-        while len(non_conflict_rows) < NON_CONFLICT_PER_CONDITION:
+    for condition_code in ALL_CONDITIONS:
+        valid_rows = []
+        while len(valid_rows) < NON_CONFLICT_PER_CONDITION:
             row = _claim_to_row(_build_valid_claim(condition_code))
             if row["conflict_label"] == 0:
-                non_conflict_rows.append(row)
+                valid_rows.append(row)
 
-        condition_patterns = [
-            pattern
-            for pattern_condition, pattern in CONFLICT_PATTERNS
-            if pattern_condition == condition_code
-        ]
         conflict_rows = []
-        conflict_index = 0
+        patterns = CONFLICT_PATTERNS[condition_code]
+        pattern_index = 0
         while len(conflict_rows) < CONFLICT_PER_CONDITION:
-            pattern = condition_patterns[
-                conflict_index % len(condition_patterns)
-            ]
-            claim = _build_conflicting_claim(condition_code, pattern)
-            row = _claim_to_row(claim)
-            conflict_index += 1
+            pattern_name = patterns[pattern_index % len(patterns)]
+            row = _claim_to_row(_materialize_conflict_pattern(condition_code, pattern_name))
+            pattern_index += 1
             if row["conflict_label"] == 1:
                 conflict_rows.append(row)
 
-        rows.extend(non_conflict_rows)
+        rows.extend(valid_rows)
         rows.extend(conflict_rows)
 
     random.shuffle(rows)
@@ -600,49 +750,25 @@ def save_dataset(rows):
 
 
 def main():
-    """Generate, save, and summarize the synthetic dataset."""
+    """Generate, save, and summarize the combined synthetic dataset."""
     rows = generate_dataset()
     output_path = save_dataset(rows)
 
-    conflict_distribution = Counter(
-        row["conflict_label"] for row in rows
-    )
+    conflict_distribution = Counter(row["conflict_label"] for row in rows)
     decision_distribution = Counter(row["decision"] for row in rows)
-    condition_label_distribution = {
-        condition_code: dict(
-            sorted(
-                Counter(
-                    row["conflict_label"]
-                    for row in rows
-                    if row["condition_code"] == condition_code
-                ).items()
-            )
+    condition_distribution = Counter(row["condition_code"] for row in rows)
+    condition_label_distribution = defaultdict(dict)
+    for condition_code in ALL_CONDITIONS:
+        label_counts = Counter(
+            row["conflict_label"] for row in rows if row["condition_code"] == condition_code
         )
-        for condition_code in CONDITIONS
-    }
-    mismatch_counts = {
-        "gender_mismatch": sum(
-            row["has_gender_mismatch"] for row in rows
-        ),
-        "age_mismatch": sum(
-            row["has_age_mismatch"] for row in rows
-        ),
-        "care_type_mismatch": sum(
-            row["has_care_type_mismatch"] for row in rows
-        ),
-        "max_amount_violation": sum(
-            row["has_max_amount_violation"] for row in rows
-        ),
-        "multiple_high_cost_items": sum(
-            row["has_multiple_high_cost_items"] for row in rows
-        ),
-    }
+        condition_label_distribution[condition_code] = dict(sorted(label_counts.items()))
 
     print(f"Dataset shape: ({len(rows)}, {len(rows[0])})")
+    print(f"Condition distribution: {dict(sorted(condition_distribution.items()))}")
     print(f"Decision distribution: {dict(sorted(decision_distribution.items()))}")
     print(f"Conflict label distribution: {dict(sorted(conflict_distribution.items()))}")
-    print(f"Condition-wise label distribution: {condition_label_distribution}")
-    print(f"openIMIS mismatch counts: {mismatch_counts}")
+    print(f"Condition-wise label distribution: {dict(condition_label_distribution)}")
     print(f"Saved CSV: {output_path}")
 
 
